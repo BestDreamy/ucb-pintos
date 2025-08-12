@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "thread.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -343,6 +344,7 @@ void thread_foreach(thread_action_func* func, void* aux) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {
   thread_current()->priority = new_priority;
+  thread_current()->original_priority = new_priority;
   thread_yield();
 }
 
@@ -444,6 +446,8 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   strlcpy(t->name, name, sizeof t->name);
   t->stack = (uint8_t*)t + PGSIZE;
   t->priority = priority;
+  t->original_priority = priority;
+  t->waiting_lock = NULL;
   t->pcb = NULL;
   t->magic = THREAD_MAGIC;
 
