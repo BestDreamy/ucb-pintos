@@ -162,11 +162,42 @@ void lock_init(struct lock* lock) {
   sema_init(&lock->semaphore, 1);
 }
 
+// void
+// donate_priority (struct thread* donee)
+// {
+//   struct thread *t = thread_current ();
+
+//   ASSERT (donee != NULL);
+//   ASSERT (t->priority > donee->priority);
+
+//   /* Propagate donation down to all donees. */
+//   while (donee != NULL)
+//     {
+//       /* To avoid duplicates in case of nested donations. M -> L then H -> M
+//          and M -> L then you shouldn't push M into L's list again. */
+//       if (donee != t->donee)
+//         list_push_back(&donee->donar_list, &t->donar_elem);
+//       donee->priority = t->priority;
+//       t->donee = donee;
+//       /* Move down. */
+//       t = donee;
+//       donee = donee->donee;
+//     }
+// }
+
 static void donate_priority(struct thread* hold_lock_thread) {
   struct thread* t = thread_current();
 
   ASSERT(hold_lock_thread != NULL);
   ASSERT(t->priority > hold_lock_thread->priority);
+
+  /*
+    e.g. High priority current thread is donating.
+    1. High priority thread is put into the hold lock thread's donar list.
+      (such as L->donar_list={M, H}, and L->prio=H->prio)
+  */
+  // if (hold_lock_thread != t->donee)
+  list_push_back(&hold_lock_thread->donor_list, &t->donor_elem);
 
   hold_lock_thread->priority = t->priority;
 }
@@ -182,7 +213,12 @@ static void donate_priority(struct thread* hold_lock_thread) {
 void lock_acquire(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(!intr_context());
-  ASSERT(!lock_held_by_current_thread(lock));
+  // printf("%s\n", thread_current()->name);
+  if (lock->holder != NULL)
+    printf("Lock holder: %s\n", lock->holder->name);
+  else
+    printf("Lock holder: NULL\n");
+  // ASSERT(!lock_held_by_current_thread(lock));
 
   /* 
     e.g. High priority current thread is donating.
@@ -227,28 +263,52 @@ bool lock_try_acquire(struct lock* lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
+// void lock_release(struct lock* lock) {
+//   ASSERT(lock != NULL);
+//   ASSERT(lock_held_by_current_thread(lock));
+
+//   struct thread* cur = thread_current();
+//   struct list_elem* e = list_begin(&cur->donar_list);
+//   int max_priority = cur->base_priority;
+//   while (e != list_end(&cur->donar_list)) {
+//     struct list_elem* next = list_next(e);
+//     struct thread* t = list_entry(e, struct thread, donar_elem);
+//     if (t->requested_lock == lock) {
+//       t->donee = NULL;
+//       list_remove(e);
+//     } else if (t->priority > max_priority) {
+//       max_priority = t->priority;
+//     }
+//     e = next;
+//   }
+//   Assert(e == list_end(&cur->donar_list));
+//   cur->priority = max_priority;
+//   lock->holder = NULL;
+//   sema_up(&lock->semaphore);
+// }
 void lock_release(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
 
-  struct thread* cur = thread_current();
-  struct list_elem* e = list_begin(&cur->donar_list);
-  int max_priority = cur->base_priority;
-  while (e != list_end(&cur->donar_list)) {
-    struct list_elem* next = list_next(e);
-    struct thread* t = list_entry(e, struct thread, donar_elem);
-    if (t->requested_lock == lock) {
-      t->donee = NULL;
-      list_remove(e);
-    } else if (t->priority > max_priority) {
-      max_priority = t->priority;
-    }
-    e = next;
-  }
-  Assert(e == list_end(&cur->donar_list));
-  cur->priority = max_priority;
-  lock->holder = NULL;
-  sema_up(&lock->semaphore);
+  printf("Thread lock release");
+  // struct thread* cur = thread_current();
+  // struct list_elem* e = list_begin(&cur->donar_list);
+  // int max_priority = cur->base_priority;
+  // while (e != list_end(&cur->donar_list)) {
+  //   struct list_elem* next = list_next(e);
+  //   struct thread* t = list_entry(e, struct thread, donar_elem);
+  //   if (t->requested_lock == lock) {
+  //     t->donee = NULL;
+  //     list_remove(e);
+  //   } else if (t->priority > max_priority) {
+  //     max_priority = t->priority;
+  //   }
+  //   e = next;
+  // }
+  // Assert(e == list_end(&cur->donar_list));
+  // cur->priority = max_priority;
+  // lock->holder = NULL;
+  // sema_up(&lock->semaphore);
 }
 
 /* Returns true if the current thread holds LOCK, false
