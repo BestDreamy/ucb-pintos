@@ -195,7 +195,7 @@ static void donate_priority(struct thread* hold_lock_thread) {
   ASSERT(t->priority > hold_lock_thread->priority);
 
   /*
-    e.g. High priority current thread is donating.
+    e.g. Current high priority thread is donating.
     1. High priority thread is put into the hold lock thread's donar list.
       (such as L->donor_list={M, H}, and L->prio=H->prio)
   */
@@ -261,48 +261,26 @@ bool lock_try_acquire(struct lock* lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
-// void lock_release(struct lock* lock) {
-//   ASSERT(lock != NULL);
-//   ASSERT(lock_held_by_current_thread(lock));
-
-//   struct thread* cur = thread_current();
-//   struct list_elem* e = list_begin(&cur->donor_list);
-//   int max_priority = cur->base_priority;
-//   while (e != list_end(&cur->donor_list)) {
-//     struct list_elem* next = list_next(e);
-//     struct thread* t = list_entry(e, struct thread, donar_elem);
-//     if (t->requested_lock == lock) {
-//       t->donee = NULL;
-//       list_remove(e);
-//     } else if (t->priority > max_priority) {
-//       max_priority = t->priority;
-//     }
-//     e = next;
-//   }
-//   Assert(e == list_end(&cur->donor_list));
-//   cur->priority = max_priority;
-//   lock->holder = NULL;
-//   sema_up(&lock->semaphore);
-// }
 void lock_release(struct lock* lock) {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
 
   struct thread* cur = thread_current();
-  struct list_elem* e = list_begin(&cur->donor_list);
+  struct list_elem* elem_ptr = list_begin(&cur->donor_list);
   int max_priority = cur->original_priority;
-  while (e != list_end(&cur->donor_list)) {
-    struct list_elem* next = list_next(e);
-    struct thread* t = list_entry(e, struct thread, donor_elem);
+  while (elem_ptr != list_end(&cur->donor_list)) {
+    struct list_elem* next = list_next(elem_ptr);
+    struct thread* t = list_entry(elem_ptr, struct thread, donor_elem);
     if (t->waiting_lock == lock) {
       // t->donee = NULL;
-      list_remove(e);
-    } else if (t->priority > max_priority) {
-      max_priority = t->priority;
+      list_remove(elem_ptr);
+      t->waiting_lock = NULL;
+    } else {
+      max_priority = (t->priority > max_priority)? t->priority: max_priority;
     }
-    e = next;
+    elem_ptr = next;
   }
-  ASSERT(e == list_end(&cur->donor_list));
+  ASSERT(elem_ptr == list_end(&cur->donor_list));
   cur->priority = max_priority;
   lock->holder = NULL;
   sema_up(&lock->semaphore);
