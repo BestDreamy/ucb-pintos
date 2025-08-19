@@ -229,9 +229,15 @@ void thread_block(void) {
   schedule();
 }
 
-static bool thread_cmp_priority(const struct list_elem* a, const struct list_elem* b,
+bool thread_greater_priority(const struct list_elem* a, const struct list_elem* b,
                                 void* aux UNUSED) {
   return list_entry(a, struct thread, elem)->priority >
+         list_entry(b, struct thread, elem)->priority;
+}
+
+bool thread_less_priority(const struct list_elem* a, const struct list_elem* b,
+                                void* aux UNUSED) {
+  return list_entry(a, struct thread, elem)->priority <
          list_entry(b, struct thread, elem)->priority;
 }
 
@@ -249,7 +255,7 @@ static void thread_enqueue(struct list* list, struct thread* t) {
   if (active_sched_policy == SCHED_FIFO)
     list_push_back(list, &t->elem);
   else if (active_sched_policy == SCHED_PRIO)
-    list_insert_ordered(list, &t->elem, (list_less_func*)&thread_cmp_priority, NULL);
+    list_insert_ordered(list, &t->elem, (list_less_func*)&thread_greater_priority, NULL);
   else
     PANIC("Unimplemented scheduling policy value: %d", active_sched_policy);
 }
@@ -271,6 +277,13 @@ void thread_unblock(struct thread* t) {
   ASSERT(t->status == THREAD_BLOCKED);
   thread_enqueue(&fifo_ready_list, t);
   t->status = THREAD_READY;
+
+  if (thread_current()->priority < t->priority) {
+    if (intr_context())
+      intr_yield_on_return();
+    else
+      thread_yield();
+  }
   intr_set_level(old_level);
 }
 
@@ -450,6 +463,8 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   t->waiting_lock = NULL;
   t->pcb = NULL;
   t->magic = THREAD_MAGIC;
+
+  list_init(&t->donor_list);
 
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);
