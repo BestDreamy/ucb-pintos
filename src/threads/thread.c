@@ -356,9 +356,16 @@ void thread_foreach(thread_action_func* func, void* aux) {
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {
-  thread_current()->priority = new_priority;
-  thread_current()->original_priority = new_priority;
-  thread_yield();
+  struct thread *t = thread_current ();
+  if (t->priority == t->original_priority || new_priority > t->priority)
+    t->priority = new_priority;
+
+  t->original_priority = new_priority;
+
+  struct list_elem *max_elem = list_max(&fifo_ready_list, thread_less_priority, NULL);
+  int max_priority =  list_entry (max_elem, struct thread, elem)->priority;
+  if(t->priority < max_priority)
+      thread_yield ();
 }
 
 /* Returns the current thread's priority. */
@@ -443,7 +450,9 @@ struct thread* running_thread(void) {
 }
 
 /* Returns true if T appears to point to a valid thread. */
-static bool is_thread(struct thread* t) { return t != NULL && t->magic == THREAD_MAGIC; }
+static bool is_thread(struct thread* t) { 
+  return (t != NULL && t->magic == THREAD_MAGIC);
+}
 
 /* Does basic initialization of T as a blocked thread named
    NAME. */
@@ -465,6 +474,8 @@ static void init_thread(struct thread* t, const char* name, int priority) {
   t->magic = THREAD_MAGIC;
 
   list_init(&t->donor_list);
+
+  t->donee = NULL;
 
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);

@@ -165,44 +165,33 @@ void lock_init(struct lock* lock) {
   sema_init(&lock->semaphore, 1);
 }
 
-// void
-// donate_priority (struct thread* donee)
-// {
-//   struct thread *t = thread_current ();
+static void donate_priority(struct thread *low_prio_thread, struct thread *high_prio_thread) {
 
-//   ASSERT (donee != NULL);
-//   ASSERT (t->priority > donee->priority);
+  if (low_prio_thread == NULL) return ;
 
-//   /* Propagate donation down to all donees. */
-//   while (donee != NULL)
-//     {
-//       /* To avoid duplicates in case of nested donations. M -> L then H -> M
-//          and M -> L then you shouldn't push M into L's list again. */
-//       if (donee != t->donee)
-//         list_push_back(&donee->donor_list, &t->donar_elem);
-//       donee->priority = t->priority;
-//       t->donee = donee;
-//       /* Move down. */
-//       t = donee;
-//       donee = donee->donee;
-//     }
-// }
-
-static void donate_priority(struct thread* hold_lock_thread) {
-  struct thread* t = thread_current();
-
-  ASSERT(hold_lock_thread != NULL);
-  ASSERT(t->priority > hold_lock_thread->priority);
+  ASSERT(low_prio_thread != NULL);
+  ASSERT(high_prio_thread->priority > low_prio_thread->priority);
 
   /*
     e.g. Current high priority thread is donating.
     1. High priority thread is put into the hold lock thread's donar list.
       (such as L->donor_list={M, H}, and L->prio=H->prio)
+    2. Each blocked thread is waiting only one lock. When H -> M, M  L,
+      L->donor_list={M, H} and M->donor_list={H}; H->waiting_lock=m and M->waiting_lock-l.
   */
-  // if (hold_lock_thread != t->donee)
-  list_push_back(&hold_lock_thread->donor_list, &t->donor_elem);
+  if (low_prio_thread != high_prio_thread->donee)
+    // To avoid duplicates in case of nested donations.
+    list_push_back(&low_prio_thread->donor_list, &high_prio_thread->donor_elem);
 
-  hold_lock_thread->priority = t->priority;
+  low_prio_thread->priority = high_prio_thread->priority;
+  high_prio_thread->donee = low_prio_thread;
+
+  donate_priority(low_prio_thread->donee, low_prio_thread);
+
+  // list_push_back(&low_prio_thread->donor_list, &high_prio_thread->donor_elem);
+
+  // low_prio_thread->priority = high_prio_thread->priority;
+  // high_prio_thread->donee = low_prio_thread;
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -230,7 +219,7 @@ void lock_acquire(struct lock* lock) {
 
   if (lock->holder != NULL && lock->holder->priority < t->priority) {
     t->waiting_lock = lock;
-    donate_priority(lock->holder);
+    donate_priority(lock->holder, t);
   }
   sema_down(&lock->semaphore);
 
@@ -272,9 +261,9 @@ void lock_release(struct lock* lock) {
     struct list_elem* next = list_next(elem_ptr);
     struct thread* t = list_entry(elem_ptr, struct thread, donor_elem);
     if (t->waiting_lock == lock) {
-      // t->donee = NULL;
       list_remove(elem_ptr);
-      t->waiting_lock = NULL;
+      t->donee = NULL;
+      // t->waiting_lock = NULL;
     } else {
       max_priority = (t->priority > max_priority)? t->priority: max_priority;
     }
