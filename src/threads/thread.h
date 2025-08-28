@@ -102,6 +102,10 @@ struct thread {
 
   struct thread *donee;        /* The thread that this thread is donating to. */
 
+  struct list_elem sleep_elem; /* List element for sleep list. */
+
+  int64_t awake_ticks;         /* Tick to wake up the thread. */
+
 #ifdef USERPROG
   /* Owned by process.c. */
   struct process* pcb; /* Process control block if this thread is a userprog */
