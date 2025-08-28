@@ -20,6 +20,8 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+static struct list sleep_list;
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -33,6 +35,7 @@ static void real_time_delay(int64_t num, int32_t denom);
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void timer_init(void) {
+  list_init(&sleep_list);
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
 }
@@ -76,20 +79,20 @@ int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
-  int64_t start = timer_ticks();
+  // int64_t start = timer_ticks();
 
-  ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks)
-    thread_yield();
+  // ASSERT(intr_get_level() == INTR_ON);
+  // while (timer_elapsed(start) < ticks)
+  //   thread_yield();
 
-  // if (ticks <= 0) return;
+  if (ticks <= 0) return;
 
-  // ASSERT (intr_get_level () == INTR_ON);
-  // enum intr_level old_level = intr_disable ();
-  // struct thread *current_thread = thread_current ();
-  // current_thread->ticks_blocked = ticks;
-  // thread_block ();
-  // intr_set_level (old_level);
+  enum intr_level old_level = intr_disable();
+  struct thread *current_thread = thread_current();
+  current_thread->awake_ticks = ticks + timer_ticks();
+  list_push_back(&sleep_list, &current_thread->sleep_elem);
+  thread_block();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -137,6 +140,21 @@ void timer_print_stats(void) { printf("Timer: %" PRId64 " ticks\n", timer_ticks(
 /* Timer interrupt handler. */
 static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
+
+  enum intr_level old_level = intr_disable();
+  struct list_elem* elem_ptr = list_begin(&sleep_list);
+  while (elem_ptr != list_end(&sleep_list)) {
+    struct list_elem* next = list_next(elem_ptr);
+    struct thread* t = list_entry(elem_ptr, struct thread, sleep_elem);
+    if (t->awake_ticks <= ticks) {
+      t->awake_ticks = 0;
+      thread_unblock(t);
+      elem_ptr = list_remove(elem_ptr);
+    }
+    elem_ptr = next;
+  }
+  intr_set_level(old_level);
+
   thread_tick();
 }
 

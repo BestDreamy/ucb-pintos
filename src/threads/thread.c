@@ -256,6 +256,8 @@ static void thread_enqueue(struct list* list, struct thread* t) {
     list_push_back(list, &t->elem);
   else if (active_sched_policy == SCHED_PRIO)
     list_insert_ordered(list, &t->elem, (list_less_func*)&thread_greater_priority, NULL);
+  else if (active_sched_policy == SCHED_FAIR)
+    list_push_back(list, &t->elem);
   else
     PANIC("Unimplemented scheduling policy value: %d", active_sched_policy);
 }
@@ -512,7 +514,7 @@ static struct thread* thread_schedule_prio(void) {
 
 /* Fair priority scheduler */
 static struct thread* thread_schedule_fair(void) {
-  PANIC("Unimplemented scheduler policy: \"-sched=fair\"");
+  return thread_schedule_fifo();
 }
 
 /* Multi-level feedback queue scheduler */
